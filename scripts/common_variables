@@ -12,7 +12,7 @@
 QEMU=${QEMU:-""}
 if [ x$QEMU != "x" ]
 then
-    QEMU=${QEMU}/build/riscv64-softmmu/
+    QEMU=${QEMU}/build/
 fi
 QEMU_BIN=${QEMU}qemu-system-riscv64
 
@@ -41,7 +41,7 @@ NVME_DEVICE_ARGS="-device nvme,serial=deadbeef,drive=hd"
 #  MEM_SIZE: RAM size for the emulated system. Default: 2GB
 #  EXTRA_QEMU_ARGS: Any extra flags to pass to QEMU (e.g. other devices).
 
-NCPU=${NCPU:-2}
+NCPU=${NCPU:-1}
 MEM_SIZE=${MEM_SIZE:-2048}
 EXTRA_QEMU_ARGS=${EXTRA_QEMU_ARGS:-""}
 
