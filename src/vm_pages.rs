@@ -18,6 +18,7 @@ use riscv_regs::{
     hgatp, hstatus, DecodedInstruction, Exception, LocalRegisterCopy, PrivilegeLevel, Readable,
     RiscvCsrInterface, Writeable, CSR,
 };
+use s_mode_utils::print::*;
 use sync::{Mutex, Once, RwLock, RwLockReadGuard};
 
 use crate::hyp_layout::UmodeSlotId;
@@ -1012,7 +1013,7 @@ pub struct VmPages<T: GuestStagePagingMode> {
     regions: RwLock<VmRegionList>,
     // How many nested TVMs deep this VM is, with 0 being the host.
     nesting: usize,
-    root: GuestStagePageTable<T>,
+    pub root: GuestStagePageTable<T>,
     pte_pages: PtePagePool,
     imsic_geometry: Once<GuestImsicGeometry>,
     iommu_context: Once<VmIommuContext>,
@@ -1055,7 +1056,7 @@ impl<T: GuestStagePagingMode> VmPages<T> {
 /// A reference to a `VmPages` in a particular state `S` that exposes the appropriate functionality
 /// for a VM in that state.
 pub struct VmPagesRef<'a, T: GuestStagePagingMode, S> {
-    inner: &'a VmPages<T>,
+    pub inner: &'a VmPages<T>,
     _vm_state: PhantomData<S>,
 }
 

@@ -35,7 +35,7 @@ extern crate alloc;
 #[macro_use]
 extern crate std;
 
-mod page_table;
+pub mod page_table;
 /// Provides access to the fields of a riscv PTE.
 mod pte;
 /// Interfaces to build and manage sv48 page tables for S and U mode access.

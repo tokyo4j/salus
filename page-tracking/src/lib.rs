@@ -29,7 +29,7 @@ extern crate alloc;
 /// `Page`-backed collections resembling those in the standard library.
 pub mod collections;
 mod hw_mem_map;
-mod page_info;
+pub mod page_info;
 /// Implements a linked-list of pages using `PageTracker`.
 pub mod page_list;
 /// Handles tracking the owner and state of each page.

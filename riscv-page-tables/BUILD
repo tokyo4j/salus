@@ -12,6 +12,7 @@ rust_library(
     deps = [
         "//page-tracking",
         "//riscv-pages",
+        "//s-mode-utils",
         "//sync",
     ],
 )

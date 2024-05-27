@@ -109,7 +109,7 @@ pub struct GuestVirtualHsCsrs {
 
 /// CSRs written on an exit from virtualization that are used by the hypervisor to determine the cause
 /// of the trap.
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 #[repr(C)]
 pub struct VmCpuTrapState {
     pub scause: u64,
@@ -327,6 +327,7 @@ impl PinnedTsmShmemArea {
     }
 }
 
+#[derive(Debug)]
 /// Identifies the reason for a trap taken from a vCPU.
 pub enum VmCpuTrap {
     /// ECALLs from VS mode.

@@ -3,11 +3,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use attestation::{AttestationManager, Error as AttestationError, TcgPcrIndex};
+use core::arch::asm;
 use core::{mem, num::Wrapping, ops::ControlFlow, ops::Neg, slice};
 use drivers::{imsic::*, pmu::PmuInfo};
 use page_tracking::collections::PageBox;
-use page_tracking::{LockedPageList, PageList, PageTracker};
-use riscv_page_tables::{GuestStagePageTable, GuestStagePagingMode};
+use page_tracking::{page_info::PageState, LockedPageList, PageList, PageTracker};
+use riscv_page_tables::{page_table::PageTableLevel, GuestStagePageTable, GuestStagePagingMode};
 use riscv_pages::*;
 use riscv_regs::{DecodedInstruction, Exception, GprIndex, Instruction, Interrupt, Trap, CSR};
 use s_mode_utils::print::*;
@@ -33,6 +34,10 @@ pub enum Error {
 }
 
 pub type Result<T> = core::result::Result<T, Error>;
+
+extern "C" {
+    fn _memcmp_aligned(s1: *const u64, s2: *const u64, len: usize) -> usize;
+}
 
 // What we report ourselves as in sbi_get_sbi_impl_id(). Just pick something unclaimed so no one
 // confuses us with BBL/OpenSBI.
@@ -579,6 +584,15 @@ impl<'a, T: GuestStagePagingMode> FinalizedVm<'a, T> {
         // Run until there's an exit we can't handle.
         let cause = loop {
             let exit = active_vcpu.run();
+            match exit {
+                VmCpuTrap::Ecall(Some(SbiMessage::DebugConsole(_))) => {}
+                VmCpuTrap::Ecall(Some(SbiMessage::CoveHost(CoveHostFunction::TvmCpuRun {
+                    ..
+                }))) => {}
+                _ => {
+                    println!("    [Exit] {:x?}", exit);
+                }
+            };
             use SbiReturnType::*;
             match exit {
                 VmCpuTrap::Ecall(Some(sbi_msg)) => {
@@ -1568,6 +1582,13 @@ impl<'a, T: GuestStagePagingMode> FinalizedVm<'a, T> {
         Ok(num_pages)
     }
 
+    fn vaddr_to_paddr(&self, vaddr: GuestPageAddr) -> SupervisorPageAddr {
+        let root = &self.vm_pages().inner.root;
+        let mut inner = root.inner.lock();
+        let pte = inner.get_mapped_leaf(vaddr).unwrap();
+        pte.page_addr()
+    }
+
     fn guest_add_shared_pages(
         &self,
         guest_id: u64,
@@ -1585,11 +1606,19 @@ impl<'a, T: GuestStagePagingMode> FinalizedVm<'a, T> {
 
         // Get the pages we're trying to insert.
         let from_page_addr = self.guest_addr_from_raw(page_addr)?;
+
+        // let paddr = self.vaddr_to_paddr(from_page_addr);
+        // let page_tracker = self.vm_pages().inner.root.page_tracker();
+        // let info = page_tracker.info(paddr);
+        // println!("{:x?}", info);
+
+        // Ensures PTEs in host VM are mapped
         let pages = self
             .vm_pages()
             .get_shareable_pages(from_page_addr, page_size, num_pages)
             .map_err(EcallError::from)?;
 
+        // Ensures PTEs in guest VM are invalidated and lock them
         // Reserve the PTEs in the destination page table.
         let to_page_addr = guest_vm.guest_addr_from_raw(guest_addr)?;
         let mapper = guest_vm
@@ -1609,6 +1638,106 @@ impl<'a, T: GuestStagePagingMode> FinalizedVm<'a, T> {
         }
 
         Ok(num_pages)
+    }
+
+    fn search_mergeable_page(&self, target_pfn: u64) -> Option<u64> {
+        let page_tracker = self.page_tracker();
+        let page_tracker_inner = page_tracker.inner.lock();
+        let page_map: &page_tracking::page_info::PageMap = &page_tracker_inner.pages;
+
+        let mut sparse_idx = 0;
+        let mut page_idx = page_map.sparse_map.get(sparse_idx).unwrap().page_map_index;
+
+        while let Some(entry) = page_map.sparse_map.get(sparse_idx) {
+            let page = page_map.pages.get(page_idx).unwrap();
+            let pfn = (entry.base_pfn + page_idx - entry.page_map_index) as u64;
+
+            if let PageState::Merged(bitmap) = page.state {
+                _ = bitmap;
+                if pfn != target_pfn {
+                    if unsafe {
+                        _memcmp_aligned(
+                            (target_pfn << 12) as *const u64,
+                            (pfn << 12) as *const u64,
+                            4096,
+                        )
+                    } == 0
+                    {
+                        println!("{:x} {:x}", pfn, target_pfn);
+                        return Some(pfn);
+                    }
+                }
+            }
+
+            page_idx += 1;
+            if page_idx >= entry.num_pages + entry.page_map_index {
+                sparse_idx += 1;
+            }
+        }
+        None
+    }
+
+    fn set_pages_mergeable(&self, page_addr: u64, page_len: u64) -> EcallResult<u64> {
+        println!(
+            "set_pages_mergeable() {:x}-{:x}",
+            page_addr,
+            page_addr + page_len
+        );
+
+        let num_pages = PageSize::num_4k_pages(page_len);
+
+        let start_page_addr = self.guest_addr_from_raw(page_addr)?;
+        let mut va = start_page_addr;
+        let end = start_page_addr.checked_add_pages(num_pages).unwrap();
+        while va < end {
+            let mut page_table = self.vm_pages().inner.root.inner.lock();
+            let pte = page_table.get_mapped_leaf(va).unwrap();
+            if pte.level().leaf_page_size() != PageSize::Size4k {
+                println!("Page size not 4K");
+                continue;
+            }
+
+            unsafe { pte.pte.set_writable(false) };
+
+            if let Some(mergeable_pfn) = self.search_mergeable_page(pte.pte.pfn().bits()) {
+                println!(
+                    "VA:{:x},PA:{:x} is merged into PA:{:x}",
+                    va.bits(),
+                    pte.pte.pfn().bits(),
+                    mergeable_pfn
+                );
+                self.page_tracker()
+                    .release_page_by_addr(
+                        pte.page_addr(),
+                        PageSize::Size4k,
+                        self.vm().page_owner_id(),
+                    )
+                    .unwrap();
+                self.page_tracker()
+                    .merge_page(
+                        SupervisorPageAddr::new(RawAddr::supervisor(mergeable_pfn << 12)).unwrap(),
+                        PageSize::Size4k,
+                        self.vm().page_owner_id(),
+                    )
+                    .unwrap();
+                unsafe { pte.pte.update_pfn(Pfn::supervisor(mergeable_pfn)) };
+            } else {
+                println!(
+                    "VA:{:x},PA:{:x} is write-protected",
+                    va.bits(),
+                    pte.pte.pfn().bits()
+                );
+                self.page_tracker()
+                    .merge_page(pte.page_addr(), PageSize::Size4k, self.vm().page_owner_id())
+                    .unwrap();
+            }
+
+            va = va.checked_add_pages_with_size(1, PageSize::Size4k).unwrap();
+        }
+
+        unsafe { asm!("hfence.gvma") };
+
+        Ok(page_len)
     }
 
     fn guest_initiate_fence(&self, guest_id: u64) -> EcallResult<u64> {
@@ -2393,6 +2522,7 @@ impl<'a, T: GuestStagePagingMode> FinalizedVm<'a, T> {
             }
             AllowExternalInterrupt { id } => self.allow_ext_interrupt(id, active_vcpu),
             DenyExternalInterrupt { id } => self.deny_ext_interrupt(id, active_vcpu),
+            SetPagesMergeable { addr, len } => self.set_pages_mergeable(addr, len),
         };
 
         // Notify the host if a COVE-Guest call succeeds.
