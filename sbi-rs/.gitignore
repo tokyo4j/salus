@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: 2023 Rivos Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+target/
+**/*.rs.bk
+**/*.sw[po]
+**/*.orig
+**/Cargo.lock
+!/Cargo.lock
+Cargo.lock
+lcov.info
+.vscode
