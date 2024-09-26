@@ -116,6 +116,13 @@ pub enum CoveGuestFunction {
         /// a0 = interrupt ID
         id: i64,
     },
+    /// a6 = 6
+    SetPagesMergeable {
+        /// a0 = start address of the region
+        addr: u64,
+        /// a1 = length of the region
+        len: u64,
+    },
 }
 
 impl CoveGuestFunction {
@@ -141,6 +148,10 @@ impl CoveGuestFunction {
             }),
             4 => Ok(AllowExternalInterrupt { id: args[0] as i64 }),
             5 => Ok(DenyExternalInterrupt { id: args[0] as i64 }),
+            6 => Ok(SetPagesMergeable {
+                addr: args[0],
+                len: args[1],
+            }),
             _ => Err(Error::NotSupported),
         }
     }
@@ -156,6 +167,7 @@ impl SbiFunction for CoveGuestFunction {
             UnshareMemory { .. } => 3,
             AllowExternalInterrupt { .. } => 4,
             DenyExternalInterrupt { .. } => 5,
+            SetPagesMergeable { .. } => 6,
         }
     }
 
@@ -168,6 +180,7 @@ impl SbiFunction for CoveGuestFunction {
             UnshareMemory { addr, len: _ } => *addr,
             AllowExternalInterrupt { id } => *id as u64,
             DenyExternalInterrupt { id } => *id as u64,
+            SetPagesMergeable { addr, len: _ } => *addr,
         }
     }
 
@@ -178,6 +191,7 @@ impl SbiFunction for CoveGuestFunction {
             RemoveMmioRegion { addr: _, len } => *len,
             ShareMemory { addr: _, len } => *len,
             UnshareMemory { addr: _, len } => *len,
+            SetPagesMergeable { addr: _, len } => *len,
             _ => 0,
         }
     }

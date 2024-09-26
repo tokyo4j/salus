@@ -122,3 +122,13 @@ impl State for MappableShared {}
 pub enum Shareable {}
 impl State for Shareable {}
 impl Mappable<MeasureOptional> for MappableShared {}
+
+#[derive(Debug)]
+pub enum Premergeable {}
+impl State for Premergeable {}
+impl Mappable<MeasureOptional> for Premergeable {}
+
+#[derive(Debug)]
+pub enum Merged {}
+impl State for Merged {}
+impl Mappable<MeasureOptional> for Merged {}

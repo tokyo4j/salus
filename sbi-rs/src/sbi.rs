@@ -161,6 +161,7 @@ pub enum SbiMessage {
     Attestation(AttestationFunction),
     /// The extension for getting performance counter state.
     Pmu(PmuFunction),
+    Yield,
     /// Vendor extensions.
     Vendor([u64; 8]),
 }
@@ -187,6 +188,7 @@ impl SbiMessage {
             EXT_VENDOR_RANGE_START..=EXT_VENDOR_RANGE_END => Ok(SbiMessage::Vendor(
                 args.try_into().map_err(|_| Error::Failed)?,
             )),
+            EXT_YIELD => Ok(SbiMessage::Yield),
             _ => Err(Error::NotSupported),
         }
     }
@@ -207,6 +209,7 @@ impl SbiMessage {
             Attestation(_) => EXT_ATTESTATION,
             Pmu(_) => EXT_PMU,
             Vendor(regs) => regs[7],
+            Yield => EXT_YIELD,
         }
     }
 
@@ -228,6 +231,7 @@ impl SbiMessage {
             Attestation(f) => f.a6(),
             Pmu(f) => f.a6(),
             Vendor(regs) => regs[6],
+            Yield => 0,
         }
     }
 
@@ -247,6 +251,7 @@ impl SbiMessage {
             Attestation(f) => f.a5(),
             Pmu(f) => f.a5(),
             Vendor(regs) => regs[5],
+            Yield => 0,
         }
     }
 
@@ -266,6 +271,7 @@ impl SbiMessage {
             Attestation(f) => f.a4(),
             Pmu(f) => f.a4(),
             Vendor(regs) => regs[4],
+            Yield => 0,
         }
     }
 
@@ -285,6 +291,7 @@ impl SbiMessage {
             Attestation(f) => f.a3(),
             Pmu(f) => f.a3(),
             Vendor(regs) => regs[3],
+            Yield => 0,
         }
     }
 
@@ -303,6 +310,7 @@ impl SbiMessage {
             CoveGuest(f) => f.a2(),
             Attestation(f) => f.a2(),
             Pmu(f) => f.a2(),
+            Yield => 0,
             Vendor(regs) => regs[2],
         }
     }
@@ -323,6 +331,7 @@ impl SbiMessage {
             Attestation(f) => f.a1(),
             Pmu(f) => f.a1(),
             Vendor(regs) => regs[1],
+            Yield => 0,
         }
     }
 
@@ -342,6 +351,7 @@ impl SbiMessage {
             Attestation(f) => f.a0(),
             Pmu(f) => f.a0(),
             Vendor(regs) => regs[0],
+            Yield => 0,
         }
     }
 

@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::salus::*;
+use crate::SbiMessage;
 use crate::{ecall_send, Result};
 
 /// Copies `len` bytes from `from` to `to`.
@@ -21,5 +22,11 @@ pub unsafe fn test_memcpy(to: *mut u8, from: *const u8, len: u64) -> Result<()> 
     });
     let msg = SalusSbiMessage::SalusTest(function).into();
     ecall_send(&msg)?;
+    Ok(())
+}
+
+pub fn yield_to_host() -> Result<()> {
+    let msg = SbiMessage::Yield;
+    unsafe { ecall_send(&msg) }?;
     Ok(())
 }

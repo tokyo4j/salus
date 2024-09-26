@@ -382,3 +382,9 @@ pub fn remove_pages(vmid: u64, guest_addr: u64, len: u64) -> Result<()> {
     unsafe { ecall_send(&msg) }?;
     Ok(())
 }
+
+pub fn reclaim_merged_page(vmid: u64) -> Result<u64> {
+    let msg = SbiMessage::CoveHost(TvmReclaimMergedPage { guest_id: vmid });
+    let reclaimed_addr = unsafe { ecall_send(&msg) }?;
+    Ok(reclaimed_addr)
+}

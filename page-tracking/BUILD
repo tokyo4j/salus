@@ -12,6 +12,7 @@ rust_library(
     deps = [
         "//riscv-pages",
         "//sync",
+        "//s-mode-utils",
         "@salus-index//:arrayvec",
     ],
 )

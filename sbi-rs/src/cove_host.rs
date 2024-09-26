@@ -493,6 +493,9 @@ pub enum CoveHostFunction {
         /// a2 = length of the range
         len: u64,
     },
+
+    /// a6 = 21
+    TvmReclaimMergedPage { guest_id: u64 },
 }
 
 impl CoveHostFunction {
@@ -591,6 +594,7 @@ impl CoveHostFunction {
                 guest_addr: args[1],
                 len: args[2],
             }),
+            21 => Ok(TvmReclaimMergedPage { guest_id: args[0] }),
             _ => Err(Error::NotSupported),
         }
     }
@@ -691,6 +695,7 @@ impl SbiFunction for CoveHostFunction {
                 guest_addr: _,
                 len: _,
             } => 20,
+            TvmReclaimMergedPage { guest_id: _ } => 21,
         }
     }
 
@@ -783,6 +788,7 @@ impl SbiFunction for CoveHostFunction {
                 guest_addr: _,
                 len: _,
             } => *guest_id,
+            TvmReclaimMergedPage { guest_id } => *guest_id,
             _ => 0,
         }
     }

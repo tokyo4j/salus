@@ -24,7 +24,7 @@ use rice::x509::{
 use riscv_regs::{sie, stopi, Interrupt, Readable, RiscvCsrInterface, Writeable, CSR};
 use s_mode_utils::abort::abort;
 use s_mode_utils::{print::*, sbi_console::SbiConsole};
-use sbi_rs::api::{attestation, base, cove_guest, reset};
+use sbi_rs::api::{attestation, base, cove_guest, reset, salus};
 use test_system::*;
 use test_workloads::consts::*;
 
@@ -486,6 +486,23 @@ extern "C" fn kernel_init(hart_id: u64, boot_args: u64) {
         }
         next_page += PAGE_SIZE_4K;
     }
+
+    println!("Setting pages mergeable");
+    let mut ptr: *mut u64 = GUEST_ZERO_PAGES_START_ADDRESS as *mut u64;
+    unsafe { *ptr = 0xdeadbeef12345678 };
+    ptr = (ptr as u64 + 4096) as *mut u64;
+    unsafe { *ptr = 0x87654321deadbeef };
+    ptr = (ptr as u64 + 4096) as *mut u64;
+    unsafe { *ptr = 0xdeadbeef12345678 };
+    ptr = (ptr as u64 + 4096) as *mut u64;
+    unsafe { *ptr = 0x87654321deadbeef };
+    ptr = (ptr as u64 + 4096) as *mut u64;
+    unsafe { *ptr = 0x0000000000000000 };
+    ptr = (ptr as u64 + 4096) as *mut u64;
+    unsafe { *ptr = 0xdeadbeef12345678 };
+    cove_guest::set_pages_mergeable(GUEST_ZERO_PAGES_START_ADDRESS, 4096 * 6).unwrap();
+
+    _ = salus::yield_to_host();
 
     test_runtest!("Test memory sharing", { test_memory_sharing() });
 

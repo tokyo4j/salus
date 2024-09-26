@@ -110,7 +110,7 @@ enum InvalidatedEntry {}
 enum LockedUnmappedEntry {}
 
 /// A valid page table entry that provides translation for a page of memory.
-enum LeafEntry {}
+pub enum LeafEntry {}
 
 /// A valid page table entry that has been locked in prepartion for remapping.
 enum LockedMappedEntry {}
@@ -158,8 +158,8 @@ impl<'a, T: PagingMode> TableEntryType<'a, T> {
 }
 
 /// A mutable reference to a page table entry of a particular type.
-struct TableEntryMut<'a, T: PagingMode, S> {
-    pte: &'a mut Pte,
+pub struct TableEntryMut<'a, T: PagingMode, S> {
+    pub pte: &'a mut Pte,
     level: T::Level,
     state: PhantomData<S>,
 }
@@ -175,7 +175,7 @@ impl<'a, T: PagingMode, S> TableEntryMut<'a, T, S> {
     }
 
     /// Returns the `PageTableLevel` this entry is at.
-    fn level(&self) -> T::Level {
+    pub fn level(&self) -> T::Level {
         self.level
     }
 }
@@ -310,7 +310,7 @@ impl<'a, T: PagingMode> LockedMappedPte<'a, T> {
 
 impl<'a, T: PagingMode> LeafPte<'a, T> {
     /// Returns the physical address of the page this PTE maps.
-    fn page_addr(&self) -> SupervisorPageAddr {
+    pub fn page_addr(&self) -> SupervisorPageAddr {
         // Unwrap ok since a valid PTE must contain a valid PFN for this level.
         PageAddr::from_pfn(self.pte.pfn(), self.level.leaf_page_size()).unwrap()
     }
@@ -624,7 +624,7 @@ pub trait GuestStagePagingMode: PagingMode<MappedAddressSpace = GuestPhys> {
 
 /// The internal state of a paging hierarchy.
 #[derive(Debug)]
-struct PageTableInner<T: PagingMode> {
+pub struct PageTableInner<T: PagingMode> {
     root: SequentialPages<InternalClean>,
     table_type: PhantomData<T>,
 }
@@ -875,7 +875,10 @@ impl<T: PagingMode> PageTableInner<T> {
     }
 
     /// Returns the valid leaf PTE mapping `vaddr` if it exists.
-    fn get_mapped_leaf(&mut self, vaddr: PageAddr<T::MappedAddressSpace>) -> Result<LeafPte<T>> {
+    pub fn get_mapped_leaf(
+        &mut self,
+        vaddr: PageAddr<T::MappedAddressSpace>,
+    ) -> Result<LeafPte<T>> {
         let entry = self.walk(RawAddr::from(vaddr));
         use TableEntryType::*;
         match entry {
@@ -1104,7 +1107,7 @@ impl<'a, T: FirstStagePagingMode> FirstStageMapper<'a, T> {
 ///
 /// TODO: Support non-4k page sizes.
 pub struct GuestStagePageTable<T: PagingMode> {
-    inner: Mutex<PageTableInner<T>>,
+    pub inner: Mutex<PageTableInner<T>>,
     page_tracker: PageTracker,
     owner: PageOwnerId,
 }

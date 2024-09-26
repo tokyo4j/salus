@@ -609,6 +609,14 @@ pub trait ShareablePhysPage: PhysPage {
     type MappablePage: MappablePhysPage<MeasureOptional>;
 }
 
+pub trait PremergeablePhysPage: PhysPage {
+    type MappablePage: MappablePhysPage<MeasureOptional>;
+}
+
+pub trait MergedPhysPage: PhysPage {
+    type MappablePage: MappablePhysPage<MeasureOptional>;
+}
+
 /// Trait representing a converted page that is eligible to be reclaimed by the owner. Pages
 /// transition from converted to reclaimable once they have been cleaned.
 pub trait ReclaimablePhysPage: ConvertedPhysPage {
@@ -788,6 +796,14 @@ impl ReclaimablePhysPage for Page<ConvertedClean> {
 
 impl ShareablePhysPage for Page<Shareable> {
     type MappablePage = Page<MappableShared>;
+}
+
+impl PremergeablePhysPage for Page<Premergeable> {
+    type MappablePage = Page<Premergeable>;
+}
+
+impl PremergeablePhysPage for Page<Merged> {
+    type MappablePage = Page<Merged>;
 }
 
 /// An iterator of the 64-bit words contained in a page.

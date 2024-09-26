@@ -784,6 +784,18 @@ extern "C" fn kernel_init(hart_id: u64, fdt_addr: u64) {
                             println!("Guest VM requested shutdown");
                             break;
                         }
+                        Ok(Yield) => {
+                            println!("yielded");
+                            for _ in 0..50 {
+                                if let Ok(reclaimed_addr) = cove_host::reclaim_merged_page(vmid) {
+                                    println!("reclaimed: {reclaimed_addr:x}");
+                                } else {
+                                    println!("failed to reclaim");
+                                }
+                            }
+                            println!("entering infinite loop");
+                            loop {}
+                        }
                         Ok(CoveGuest(guest_func)) => {
                             use sbi_rs::CoveGuestFunction::*;
                             match guest_func {

@@ -84,7 +84,7 @@ const MASK_RWX: u64 = (1 << PteFieldBit::Read.shift())
 
 /// Represents a PTE in memory. Never instantiated. Only used as a reference to entries in a page
 /// table.
-pub(crate) struct Pte(u64);
+pub struct Pte(u64);
 
 impl Pte {
     /// Writes the mapping for the given page with that config bits in `status` and marks the entry
@@ -109,6 +109,14 @@ impl Pte {
         let prev = Pfn::supervisor((self.0 >> PFN_SHIFT) & PFN_MASK);
         self.0 = (self.0 & !(PFN_MASK << PFN_SHIFT)) | (pfn.bits() << PFN_SHIFT);
         prev
+    }
+
+    pub unsafe fn set_writable(&mut self, writable: bool) {
+        if writable {
+            self.0 |= PteFieldBit::Write.mask()
+        } else {
+            self.0 &= !PteFieldBit::Write.mask()
+        }
     }
 
     /// Returns the raw bits the make up the PTE.

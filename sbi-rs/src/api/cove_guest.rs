@@ -87,3 +87,9 @@ pub fn deny_all_external_interrupts() -> Result<()> {
     unsafe { ecall_send(&msg) }?;
     Ok(())
 }
+
+pub fn set_pages_mergeable(addr: u64, len: u64) -> Result<()> {
+    let msg = SbiMessage::CoveGuest(SetPagesMergeable { addr, len });
+    unsafe { ecall_send(&msg) }?;
+    Ok(())
+}

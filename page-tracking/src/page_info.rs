@@ -41,6 +41,9 @@ pub enum PageState {
     /// reassigned.
     HypState,
 
+    // value is a bitmap of VMIDs
+    Merged(u64),
+
     /// Page has been invalidated and started the conversion operation at the given TLB version in
     /// the current owner's address space.
     Converting(TlbVersion),
@@ -69,7 +72,7 @@ pub const MAX_PAGE_OWNERS: usize = 2;
 #[derive(Clone, Debug)]
 pub struct PageInfo {
     mem_type: MemType,
-    state: PageState,
+    pub state: PageState,
     owners: PageOwnerVec,
     // Address of the next page in the list if != None.
     link: Option<NonZeroU64>,
@@ -193,6 +196,16 @@ impl PageInfo {
                     self.state = Converted;
                     Ok(())
                 }
+            }
+            Merged(mut rc) => {
+                rc -= 1;
+                if rc == 0 {
+                    self.state = Converted;
+                    self.owners.pop().unwrap();
+                } else {
+                    self.state = Merged(rc);
+                }
+                Ok(())
             }
             ConvertedLocked => Err(PageTrackingError::PageLocked),
             BlockedShared(rc, tlbv) if !was_invalidated => {
@@ -355,6 +368,20 @@ impl PageInfo {
         }
     }
 
+    pub fn set_merged(&mut self) -> PageTrackingResult<()> {
+        match self.state {
+            PageState::Mapped => {
+                self.state = PageState::Merged(1);
+                Ok(())
+            }
+            PageState::Merged(rc) => {
+                self.state = PageState::Merged(rc + 1);
+                Ok(())
+            }
+            _ => Err(PageTrackingError::PageNotMergeable),
+        }
+    }
+
     /// Reclaims the "ConvertedLocked" page as a "Mapped" page for the current owner.
     pub fn reclaim(&mut self) -> PageTrackingResult<()> {
         use PageState::*;
@@ -460,16 +487,16 @@ const MAX_SPARSE_MAP_ENTRIES: usize = 16;
 
 /// Maps a contiguous range of memory to a subset of the `PageMap`.
 #[derive(Clone, Copy, Debug)]
-struct SparseMapEntry {
-    base_pfn: usize,
-    num_pages: usize,
-    page_map_index: usize,
+pub struct SparseMapEntry {
+    pub base_pfn: usize,
+    pub num_pages: usize,
+    pub page_map_index: usize,
 }
 
 /// Keeps information for all physical pages in the system.
 pub struct PageMap {
-    pages: RawPageVec<PageInfo>,
-    sparse_map: ArrayVec<SparseMapEntry, MAX_SPARSE_MAP_ENTRIES>,
+    pub pages: RawPageVec<PageInfo>,
+    pub sparse_map: ArrayVec<SparseMapEntry, MAX_SPARSE_MAP_ENTRIES>,
 }
 
 impl PageMap {

@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use riscv_pages::*;
+use s_mode_utils::print::*;
 use sync::Mutex;
 
 use crate::collections::{RawPageVec, StaticPageRef};
@@ -45,6 +46,8 @@ pub enum Error {
     PageNotReclaimable,
     /// The page cannot be shared.
     PageNotShareable,
+    PageNotMergeable,
+    PageMergerExists,
     /// The page isn't in Shared state.
     PageNotShared,
     /// Attempt to intiate an invalid page state transition.
@@ -73,10 +76,10 @@ pub enum Error {
 pub type Result<T> = core::result::Result<T, Error>;
 
 // Inner struct that is wrapped in a mutex by `PageTracker`.
-struct PageTrackerInner {
+pub struct PageTrackerInner {
     next_owner_id: u64,
     active_guests: RawPageVec<PageOwnerId>,
-    pages: PageMap,
+    pub pages: PageMap,
 }
 
 impl PageTrackerInner {
@@ -94,10 +97,15 @@ impl PageTrackerInner {
 /// backing page list. That page list is needed for the lifetime of the system.
 #[derive(Copy, Clone)]
 pub struct PageTracker {
-    inner: StaticPageRef<Mutex<PageTrackerInner>>,
+    pub inner: StaticPageRef<Mutex<PageTrackerInner>>,
 }
 
 impl PageTracker {
+    pub fn info(&self, addr: SupervisorPageAddr) -> PageInfo {
+        let mut inner = self.inner.lock();
+        inner.get(addr).unwrap().clone()
+    }
+
     /// Creates a new PageTracker representing all pages in the system and returns all pages that are
     /// available for the primary host to use, starting at the next `host_alignment`-aligned chunk.
     pub fn from(
@@ -272,6 +280,34 @@ impl PageTracker {
         Ok(unsafe { P::MappablePage::new_with_size(page.addr(), page.size()) })
     }
 
+    pub fn merge_page(
+        &self,
+        page_addr: SupervisorPageAddr,
+        page_size: PageSize,
+        owner: PageOwnerId,
+    ) -> Result<()> {
+        self.for_each_page(page_addr, page_size, |info| {
+            if info.mem_type() != MemType::Ram {
+                return Err(Error::PageNotMergeable);
+            }
+            match info.state() {
+                PageState::Mapped => {
+                    if info.owner() != Some(owner) {
+                        return Err(Error::PageNotMergeable);
+                    }
+                }
+                PageState::Merged(_) => {}
+                _ => {
+                    return Err(Error::PageNotMergeable);
+                }
+            }
+
+            info.set_merged()
+        })?;
+        // Safe since we own the page and have updated its state.
+        Ok(())
+    }
+
     /// Assigns `page` as an internal state page for `owner`, returning a page that is eligible to
     /// be used with various internal collection types (e.g. `PageBox<>`).
     pub fn assign_page_for_internal_state(
@@ -301,7 +337,17 @@ impl PageTracker {
     ) -> Result<()> {
         self.for_each_page(addr, page_size, |info| {
             // Shared pages might be owned by the parent
-            if info.owner() != Some(owner) && !info.is_shared() {
+            if info.owner() != Some(owner)
+                && !info.is_shared()
+                && !matches!(info.state(), PageState::Merged(_))
+            {
+                println!(
+                    "page ({:x}, {:?}) is {:?}, but requested with {:?}",
+                    addr.bits(),
+                    info.state(),
+                    info.owner(),
+                    owner
+                );
                 return Err(Error::OwnerMismatch);
             }
             info.release(false)
@@ -358,7 +404,7 @@ impl PageTracker {
         self.for_each_page(addr, page_size, |info| {
             if info.owner() != Some(owner)
                 || info.mem_type() != P::mem_type()
-                || (info.state() != PageState::Converted
+                || (!matches!(info.state(), PageState::Converted)
                     && info.complete_conversion(tlb_version).is_err())
             {
                 return Err(Error::PageNotConvertible);
@@ -446,6 +492,27 @@ impl PageTracker {
         Ok(unsafe { P::new_with_size(addr, page_size) })
     }
 
+    pub fn get_premergeable_page<P: PremergeablePhysPage>(
+        &self,
+        addr: SupervisorPageAddr,
+        page_size: PageSize,
+        owner: PageOwnerId,
+    ) -> Result<P> {
+        self.for_each_page(addr, page_size, |info| {
+            if info.owner() != Some(owner)
+                || info.mem_type() != P::mem_type()
+                || info.state() != PageState::Mapped
+            {
+                Err(Error::PageNotMergeable)
+            } else {
+                Ok(())
+            }
+        })?;
+
+        // Safe since we've verified the typing of the page.
+        Ok(unsafe { P::new_with_size(addr, page_size) })
+    }
+
     /// Returns true if and only if `addr` is a "Shared" page with type `mem_type`.
     pub fn is_shared_page(
         &self,
@@ -485,7 +552,8 @@ impl PageTracker {
         self.all_pages(addr, page_size, |info| {
             info.owner() == Some(owner)
                 && info.mem_type() == mem_type
-                && (info.state() == PageState::Converted || info.is_convertible(tlb_version))
+                && (matches!(info.state(), PageState::Converted)
+                    || info.is_convertible(tlb_version))
         })
     }
 

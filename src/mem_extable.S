@@ -130,3 +130,31 @@ _copy_from_user:
 _ret_from_copy:
     mv    a0, t2
     ret
+
+// uint64_t _memcmp_aligned(uint64_t *src1, uint64_t *src2, uint64_t len)
+.global _memcmp_aligned
+_memcmp_aligned:
+    // len -= 8;
+    addi    a2, a2, -8
+1:
+    // uint64_t val1 = *src1;
+    ld      a3, 0(a0)
+    // uint64_t val2 = *src2;
+    ld      a4, 0(a1)
+    // bool diff = (bool)(val1 - val2);
+    subw    a5, a3, a4
+    snez    a6, a5
+    // src1++;
+    addi    a1, a1, 8
+    // src2++;
+    addi    a0, a0, 8
+    // bool done = (len == 0) || diff;
+    seqz    a5, a2
+    or      a5, a6, a5
+    // len -= 8;
+    addi    a2, a2, -8
+    // if (!done) goto 1;
+    beqz    a5, 1b
+    // return val1 - val2;
+    subw    a0, a3, a4
+    ret
