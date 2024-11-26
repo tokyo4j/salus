@@ -596,7 +596,7 @@ const HOSTVM_GUEST_TRACKING_PAGES: usize = 2;
 
 /// Represents the special VM that serves as the host for the system.
 pub struct HostVm<T: GuestStagePagingMode> {
-    inner: GuestVm<T>,
+    pub inner: GuestVm<T>,
 }
 
 impl<T: GuestStagePagingMode> HostVm<T> {

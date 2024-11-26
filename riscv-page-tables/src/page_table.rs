@@ -6,6 +6,7 @@ use crate::pte::{Pte, PteFieldBits, PteLeafPerms};
 use core::marker::PhantomData;
 use page_tracking::PageTracker;
 use riscv_pages::*;
+// use s_mode_utils::print::*;
 use sync::Mutex;
 
 /// Number of entries that can fit into a page.
@@ -362,7 +363,7 @@ impl<'a, T: PagingMode> PageTablePte<'a, T> {
 /// Holds the address of a page table for a given level in the paging structure.
 /// `PageTable`s are loaned by top level pages translation schemes such as `Sv48x4` and `Sv48`
 /// (implementors of `PagingMode`).
-struct PageTable<'a, T: PagingMode> {
+pub struct PageTable<'a, T: PagingMode> {
     table_addr: SupervisorPageAddr,
     level: T::Level,
     // Bind our lifetime to that of the top-level `GuestStagePageTable`.
@@ -371,7 +372,7 @@ struct PageTable<'a, T: PagingMode> {
 
 impl<'a, T: PagingMode> PageTable<'a, T> {
     /// Creates a `PageTable` from the root of a `GuestStagePageTable`.
-    fn from_root(owner: &'a mut PageTableInner<T>) -> Self {
+    pub fn from_root(owner: &'a mut PageTableInner<T>) -> Self {
         Self {
             table_addr: owner.root.base(),
             level: T::root_level(),
@@ -504,6 +505,39 @@ impl<'a, T: PagingMode> PageTable<'a, T> {
                 _ => (),
             }
         }
+    }
+
+    pub fn paddr_to_vaddr(&mut self, parent_vaddr: u64, target_paddr: u64) -> Option<u64> {
+        let iter = PageTableIndexIter::new(self.level);
+        for index in iter {
+            let vaddr = parent_vaddr + index.index * (self.level.leaf_page_size() as u64);
+            let entry = self.entry_for_index_mut(index);
+
+            use TableEntryType::*;
+            let result = match entry {
+                Table(t) => t.table().paddr_to_vaddr(vaddr, target_paddr),
+                Leaf(l) => {
+                    if l.page_addr().bits() == target_paddr {
+                        Some(vaddr)
+                    } else {
+                        None
+                    }
+                }
+                Invalidated(i) => {
+                    if i.page_addr().bits() == target_paddr {
+                        i.mark_valid();
+                        Some(vaddr)
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            };
+            if result.is_some() {
+                return result;
+            }
+        }
+        None
     }
 }
 
@@ -925,6 +959,10 @@ impl<T: PagingMode> PageTableInner<T> {
             }
         }
         Err(Error::PteNotPromotable)
+    }
+
+    pub fn paddr_to_vaddr(&mut self, parent_vaddr: u64, target_paddr: u64) -> Option<u64> {
+        PageTable::from_root(self).paddr_to_vaddr(parent_vaddr, target_paddr)
     }
 }
 

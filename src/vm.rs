@@ -8,7 +8,9 @@ use core::{mem, num::Wrapping, ops::ControlFlow, ops::Neg, slice};
 use drivers::{imsic::*, pmu::PmuInfo};
 use page_tracking::collections::PageBox;
 use page_tracking::{page_info::PageState, LockedPageList, PageList, PageTracker};
-use riscv_page_tables::{page_table::PageTableLevel, GuestStagePageTable, GuestStagePagingMode};
+use riscv_page_tables::{
+    page_table::PageTable, page_table::PageTableLevel, GuestStagePageTable, GuestStagePagingMode,
+};
 use riscv_pages::*;
 use riscv_regs::{DecodedInstruction, Exception, GprIndex, Instruction, Interrupt, Trap, CSR};
 use s_mode_utils::print::*;
@@ -24,6 +26,7 @@ use crate::vm_pages::Error as VmPagesError;
 use crate::vm_pages::{
     ActiveVmPages, AnyVmPages, InstructionFetchError, PageFaultType, VmPages, VmPagesRef,
 };
+use crate::HOST_VM;
 
 #[derive(Debug)]
 pub enum Error {
@@ -604,7 +607,7 @@ impl<'a, T: GuestStagePagingMode> FinalizedVm<'a, T> {
                     ..
                 }))) => {}
                 VmCpuTrap::Ecall(Some(SbiMessage::CoveGuest(_))) => {
-                    println!("    [Exit] {:x?}", exit);
+                    // println!("    [Exit] {:x?}", exit);
                 }
                 _ => {}
             };
@@ -1222,10 +1225,15 @@ impl<'a, T: GuestStagePagingMode> FinalizedVm<'a, T> {
 
     /// Converts `num_pages` of 4kB page-size starting at guest physical address `page_addr` to confidential memory.
     fn convert_pages(&self, page_addr: u64, num_pages: u64) -> EcallResult<u64> {
-        let page_addr = self.guest_addr_from_raw(page_addr)?;
-        self.vm_pages()
-            .convert_pages(page_addr, num_pages)
-            .map_err(EcallError::from)?;
+        let addr = self.guest_addr_from_raw(page_addr)?;
+        let result = self
+            .vm_pages()
+            .convert_pages(addr, num_pages)
+            .map_err(EcallError::from);
+        if let Err(err) = result {
+            println!("Page conversion failed at {:x}", page_addr);
+            return Err(err);
+        }
         Ok(num_pages)
     }
 
@@ -1695,11 +1703,11 @@ impl<'a, T: GuestStagePagingMode> FinalizedVm<'a, T> {
     }
 
     fn set_pages_mergeable(&self, page_addr: u64, page_len: u64) -> EcallResult<u64> {
-        println!(
-            "set_pages_mergeable() {:x}-{:x}",
-            page_addr,
-            page_addr + page_len
-        );
+        // println!(
+        //     "set_pages_mergeable() {:x}-{:x}",
+        //     page_addr,
+        //     page_addr + page_len
+        // );
 
         let num_pages = PageSize::num_4k_pages(page_len);
 
@@ -1749,7 +1757,7 @@ impl<'a, T: GuestStagePagingMode> FinalizedVm<'a, T> {
                 println!(
                     "VA:{:x},PA:{:x} is write-protected",
                     va.bits(),
-                    pte.pte.pfn().bits()
+                    pte.pte.pfn().bits() << 12
                 );
                 self.page_tracker()
                     .merge_page(pte.page_addr(), PageSize::Size4k, self.vm().page_owner_id())
@@ -1859,24 +1867,30 @@ impl<'a, T: GuestStagePagingMode> FinalizedVm<'a, T> {
     }
 
     fn guest_reclaim_merged_page(&self, guest_id: u64) -> EcallResult<u64> {
+        // println!("guest_reclaim_merged_page");
         let guest = self.guest_by_id(guest_id)?;
         let guest_vm = guest
             .as_finalized_vm()
             .ok_or(EcallError::Sbi(SbiError::InvalidParam))?;
         let mut freelist = guest_vm.vm_pages().inner.freelist.write();
-        let mut addr: u64 = 0;
 
-        if (rand() % 100) < 80 {
-            return Err(EcallError::Sbi(Failed));
-        }
+        // if (rand() % 100) < 80 {
+        //     return Err(EcallError::Sbi(Failed));
+        // }
 
+        // self.inner.vm().vcpus.get_vcpu(0);
+
+        // let mut inner_table = self.vm_pages().inner.root.inner.lock();
+        let vm_inner = HOST_VM.get().unwrap().inner.inner.read();
+        let mut inner_table = vm_inner.vm.vm_pages.root.inner.lock();
         if let Some(page) = freelist.pop() {
-            addr = page.addr().bits();
-        } else {
-            return Err(EcallError::Sbi(Failed));
+            let paddr = page.addr().bits();
+            if let Some(vaddr) = inner_table.paddr_to_vaddr(0, paddr) {
+                println!("returning a merged page at {:x?}", vaddr);
+                return Ok(vaddr);
+            }
         }
-
-        Ok(addr)
+        Err(EcallError::Sbi(Failed))
     }
 
     fn handle_salus_test(

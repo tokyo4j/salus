@@ -26,15 +26,15 @@ pub type Result<T> = core::result::Result<T, Error>;
 
 // The possible states of a guest `Vm`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum GuestState {
+pub enum GuestState {
     Init,
     Running,
 }
 
 // Wrapper enum for a `Vm<T>` plus its state.
-struct GuestVmInner<T: GuestStagePagingMode> {
-    vm: Vm<T>,
-    state: GuestState,
+pub struct GuestVmInner<T: GuestStagePagingMode> {
+    pub vm: Vm<T>,
+    pub state: GuestState,
 }
 
 impl<T: GuestStagePagingMode> GuestVmInner<T> {
@@ -82,7 +82,7 @@ impl<'a, T: GuestStagePagingMode, S> GuestStateGuard<'a, T, S> {
 
 /// A (reference-counted) reference to a guest VM.
 pub struct GuestVm<T: GuestStagePagingMode> {
-    inner: PageArc<RwLock<GuestVmInner<T>>>,
+    pub inner: PageArc<RwLock<GuestVmInner<T>>>,
 }
 
 impl<T: GuestStagePagingMode> Clone for GuestVm<T> {
